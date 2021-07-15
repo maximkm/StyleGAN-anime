@@ -19,19 +19,19 @@ def train():
     # Load train image
     transform = transforms.Compose(
         [
-            transforms.Resize((IMG_SIZE, IMG_SIZE)),
-            transforms.ToTensor(),
-            transforms.Normalize((0.5), (0.5)),
-        ]
-    )
+         transforms.Resize((conf.IMG_SIZE, conf.IMG_SIZE)),
+         transforms.ToTensor(),
+         transforms.Normalize((0.5), (0.5)),
+         ]
+        )
 
-    dataset = torchvision.datasets.ImageFolder(Images_dir, transform=transform)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
+    dataset = torchvision.datasets.ImageFolder(conf.Dataset, transform=transform)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=conf.BATCH_SIZE, shuffle=True, num_workers=0)
 
     # Create the model
     start_epoch = 0
-    G = Generator(IMG_SIZE, latent_size=LATENT)
-    D = Discriminator(IMG_SIZE)
+    G = Generator(conf.IMG_SIZE, deep_mapping=conf.deep_mapping, latent_size=conf.LATENT, bilinear=conf.bilinear, channel_base=conf.channel_base)
+    D = Discriminator(conf.IMG_SIZE, bilinear=conf.bilinear, channel_base=conf.channel_base)
     Loss_G_list = []
     Loss_D_list = []
 
@@ -54,124 +54,147 @@ def train():
     D.to(device)
 
     # Create the criterion, optimizer and scheduler
-    optim_D = torch.optim.Adam(D.parameters(), lr=0.003, betas=(0.45, 0.5))
-    optim_G = torch.optim.Adam(G.parameters(), lr=0.003, betas=(0.45, 0.5))
-    scheduler_D = torch.optim.lr_scheduler.ExponentialLR(optim_D, gamma=0.99)
-    scheduler_G = torch.optim.lr_scheduler.ExponentialLR(optim_G, gamma=0.99)
+    optim_D = torch.optim.Adam(D.parameters(), lr=conf.lr_D, betas=(conf.beta1_D, conf.beta2_D))
+    optim_G = torch.optim.Adam(G.parameters(), lr=conf.lr_G, betas=(conf.beta1_G, conf.beta2_G))
 
-    def r1loss(inputs, label=None):
-        # non-saturating loss with R1 regularization
-        l = -1 if label else 1
-        return F.softplus(l * inputs).mean()
+    Tensor = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
 
-    # Train
-    fix_z = torch.randn([BATCH_SIZE, LATENT]).to(device)
-    for epoch in range(start_epoch, epochs):
-        bar = tqdm(dataloader)
-        loss_D_list = []
-        loss_G_list = []
-        for i, (real_img, _) in enumerate(bar):
-            # (1) Update D network
-            D.zero_grad()
 
-            real_img = real_img.to(device)
-            real_img.requires_grad = True
-            real_logit = D(real_img)
-            d_real_loss = r1loss(real_logit, True)
+    def compute_gradient_penalty(D, real_samples, fake_samples):
+        # Calculates the gradient penalty loss for WGAN GP
+        # Random weight term for interpolation between real and fake samples
+        alpha = Tensor(np.random.random((real_samples.size(0), 1, 1, 1)))
+        # Get random interpolation between real and fake samples
+        interpolates = (alpha * real_samples + ((1 - alpha) * fake_samples)).requires_grad_(True)
+        d_interpolates = D(interpolates)
+        fake = Variable(Tensor(real_samples.shape[0], 1).fill_(1.0), requires_grad=False)
+        # Get gradient w.r.t. interpolates
+        gradients = grad(
+            outputs=d_interpolates,
+            inputs=interpolates,
+            grad_outputs=fake,
+            create_graph=True,
+            retain_graph=True,
+            only_inputs=True,
+        )[0]
+        gradients = gradients.view(gradients.size(0), -1)
+        gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
+        return gradient_penalty
 
-            grad_real = grad(outputs=real_logit.sum(), inputs=real_img, create_graph=True)[0]
-            grad_penalty = (grad_real.view(grad_real.size(0), -1).norm(2, dim=1) ** 2).mean()
-            grad_penalty = 0.5 * R1_GAMMA * grad_penalty
-            D_x_loss = d_real_loss + grad_penalty
+# Train
+fix_z = torch.randn([conf.BATCH_SIZE, conf.LATENT]).to(device)
+for epoch in range(start_epoch, conf.epochs):
+    bar = tqdm(dataloader)
+    loss_D_list = []
+    loss_G_list = []
+    for i, (real_img, _) in enumerate(bar):
+        # (1) Update D network
+        real_imgs = Variable(real_img.type(Tensor))
+        optim_D.zero_grad()
 
-            fake_img = G(torch.randn([real_img.size(0), LATENT]).to(device))
-            fake_logit = D(fake_img.detach())
-            D_z_loss = r1loss(fake_logit, False)
-            D_loss = D_x_loss + D_z_loss
+        # Sample noise as generator input
+        z = Variable(Tensor(np.random.normal(0, 1, (real_imgs.size(0), conf.LATENT))))
 
-            D.zero_grad()
-            D_loss.backward()
-            optim_D.step()
+        # Generate a batch of images
 
-            loss_D_list.append(D_loss.item())
+        fake_imgs = G(z)
 
-            # (2) Update G network
-            if i % UPD_FOR_GEN == 0:
-                G.zero_grad()
-                fake_img = G(torch.randn([real_img.size(0), LATENT]).to(device))
-                fake_logit = D(fake_img)
-                G_loss = r1loss(fake_logit, True)
+        # Real images
+        real_validity = D(real_imgs)
+        # Fake images
+        fake_validity = D(fake_imgs)
+        # Gradient penalty
+        gradient_penalty = compute_gradient_penalty(D, real_imgs.data, fake_imgs.data)
+        # Adversarial loss
+        d_loss = -torch.mean(real_validity) + torch.mean(fake_validity) + conf.lambda_gp * gradient_penalty
 
-                G_loss.backward()
-                optim_G.step()
+        d_loss.backward()
+        optim_D.step()
+        
+        loss_D_list.append(d_loss.item())
+        
+        optim_G.zero_grad()
+        # (2) Update G network
+        if i % conf.UPD_FOR_GEN == 0:
+            # Generate a batch of images
+            fake_imgs = G(z)
+            # Loss measures generator's ability to fool the discriminator
+            # Train on fake images
+            fake_validity = D(fake_imgs)
+            g_loss = -torch.mean(fake_validity)
 
-                loss_G_list.append(G_loss.item())
+            g_loss.backward()
+            optim_G.step()
+            
+            loss_G_list.append(g_loss.item())
+            wandb.log({"loss_G":g_loss.item(), "loss_D":d_loss.item()})
 
-            # Generate test image
-            if (i + 1) % (len(dataloader) // 4) == 0:
-                with torch.no_grad():
-                    fake_img = G(fix_z).detach().cpu()
-                    save_image(fake_img, f'{output}/{strftime("%Y-%m-%d %H-%M", gmtime())} {epoch}.png', normalize=True)
+        # Generate test image
+        if (i+1) % (len(dataloader) // 4) == 0:
+            with torch.no_grad():
+                fake_img = G(fix_z).detach().cpu()
+                save_image(fake_img, f'{output}/{strftime("%Y-%m-%d %H-%M", gmtime())} {epoch}.png', normalize=True)
 
-            # Output training stats
-            if i % 10 == 0:
-                clear_output(wait=True)
-                plt.figure()
-                plt.plot(loss_D_list[-20:-1], '-o')
-                plt.title("Last 20 loss curve (Discriminator)")
+        # Output training stats
+        if i % 10 == 0:
+            clear_output(wait=True)
+            plt.figure()
+            plt.plot(loss_D_list[-20:-1], '-o')
+            plt.title("Last 20 loss curve (Discriminator)")
+            plt.show()
+
+            plt.figure()
+            plt.plot(loss_G_list[-20:-1], '-o')
+            plt.title("Last 20 loss curve (Generator)")
+            plt.show()
+
+            with torch.no_grad():
+                plt.title("Random generated face")
+                plt.imshow(G(torch.randn(conf.LATENT).to(device)).detach().cpu()[0].permute(1, 2, 0))
                 plt.show()
+        bar.set_description(f"Epoch {epoch + 1}/{conf.epochs} [{i+1}, {len(dataloader)}] [G]: {loss_G_list[-1]} [D]: {loss_D_list[-1]}")
 
-                plt.figure()
-                plt.plot(loss_G_list[-20:-1], '-o')
-                plt.title("Last 20 loss curve (Generator)")
-                plt.show()
+    # Save the result
+    Loss_G_list.append(np.mean(loss_G_list))
+    Loss_D_list.append(np.mean(loss_D_list))
 
-                with torch.no_grad():
-                    plt.title("Random generated face")
-                    plt.imshow(G(torch.randn(LATENT).to(device)).detach().cpu()[0].permute(1, 2, 0))
-                    plt.show()
-            bar.set_description(f"Epoch {epoch + 1}/{epochs} [{i + 1}, {len(dataloader)}] [G]: {loss_G_list[-1]} [D]: {loss_D_list[-1]}")
-
-        # Save the result
-        Loss_G_list.append(np.mean(loss_G_list))
-        Loss_D_list.append(np.mean(loss_D_list))
-
-        # Save model
-        state = {
-            'G': G.state_dict(),
-            'D': D.state_dict(),
-            'Loss_G': Loss_G_list,
-            'Loss_D': Loss_D_list,
-            'start_epoch': epoch,
-        }
-        torch.save(state, f'{Weight_dir}/weight.pth')
-
-        scheduler_D.step()
-        scheduler_G.step()
-
-    # Plot all loss train
-    clear_output(wait=True)
-    plt.figure()
-    plt.plot(Loss_D_list, '-o')
-    plt.title("Loss curve (Discriminator)")
-    plt.show()
-
-    plt.figure()
-    plt.plot(Loss_G_list, '-o')
-    plt.title("Loss curve (Generator)")
-    plt.show()
+    # Save model
+    state = {
+        'G': G.state_dict(),
+        'D': D.state_dict(),
+        'Loss_G': Loss_G_list,
+        'Loss_D': Loss_D_list,
+        'start_epoch': epoch + 1,
+    }
+    torch.save(state, f'{Weight_dir}/weight {epoch + 1}.pth')
 
 
 if __name__ == "__main__":
+    wandb.login()
+    
     # Setting up the main training parameters
-    IMG_SIZE = 64
-    UPD_FOR_GEN = 1
-    BATCH_SIZE = 32
-    LATENT = 512
-    R1_GAMMA = 10
-    Images_dir = 'CelebA'
+    wandb.init(
+        project='StyleGAN-E',
+        config={
+            'IMG_SIZE': 32,
+            'UPD_FOR_GEN': 1,
+            'BATCH_SIZE': 16,
+            'LATENT': 256,
+            'lambda_gp': 10,
+            'deep_mapping': 6,
+            'channel_base': 16384,
+            'bilinear': True,
+            'lr_G': 0.003,
+            'lr_D': 0.003,
+            'beta1_G': 0.5,
+            'beta2_G': 0.55,
+            'beta1_D': 0.5,
+            'beta2_D': 0.55,
+            'Dataset': 'DataGAN1',
+            'epochs': 100,
+        }
+    )
+    conf = wandb.config
     Weight_dir = 'WeightGAN'
-    output = 'ResultGAN'
+    output = 'ResultGAN2'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    epochs = 20
-    train()

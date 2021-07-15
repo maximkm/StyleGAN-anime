@@ -1,6 +1,6 @@
 import torchvision.transforms as transforms
+from torch.autograd import grad, Variable
 from torchvision.utils import save_image
-from torch.autograd import grad
 import torch.nn.functional as F
 import torch.nn as nn
 import torchvision
@@ -12,6 +12,7 @@ from time import gmtime, strftime
 from tqdm import tqdm
 from PIL import Image
 import numpy as np
+import wandb
 import os
 
 
@@ -29,24 +30,24 @@ def Normalize_channels(img, eps=1e-8):
     return img_mean / (img.view(batch_size, channels, -1).std(dim=2).view(batch_size, channels, 1, 1) + eps)
 
 
-def Generate_map_channels(out_res, start_res=4, max_channels=512):
+def Generate_map_channels(out_res, start_res=4, max_channels=512, base_channels=8192):
     # Returns the number of channels for each intermediate resolution
+    assert base_channels // out_res**2 > 0
     map_channels = dict()
-    base_channels = 8 * out_res ** 2
     k = start_res
     while k <= out_res:
-        map_channels[k] = min(base_channels // k ** 2, max_channels)
+        map_channels[k] =  min(base_channels // k**2, max_channels)
         k *= 2
     return map_channels
 
 
 class Mapping(nn.Module):
     def __init__(self,
-                 z_dim: int,  # Dimension of the latent space
-                 deep_mapping=8,  # Mapping depth
-                 normalize=True,  # Normalization of input vectors
-                 eps=1e-8,  # Parameter for normalization stability
-                 ):
+                 z_dim: int,           # Dimension of the latent space
+                 deep_mapping=8,       # Mapping depth
+                 normalize=True,       # Normalization of input vectors
+                 eps=1e-8,             # Parameter for normalization stability
+                ):
         super().__init__()
         self.dim = z_dim
         self.deep = deep_mapping
@@ -60,7 +61,7 @@ class Mapping(nn.Module):
                 nn.Linear(self.dim, self.dim),
                 nn.LeakyReLU(0.2),
             ))
-
+        
             # Initializing weights
             nn.init.xavier_normal_(self.blocks[-1][0].weight.data)
             nn.init.zeros_(self.blocks[-1][0].bias.data)
@@ -68,9 +69,10 @@ class Mapping(nn.Module):
         self.blocks.append(nn.Linear(self.dim, self.dim))
         nn.init.xavier_normal_(self.blocks[-1].weight.data)
         nn.init.zeros_(self.blocks[-1].bias.data)
-
+        
         # Registering parameters in the model
         self.blocks = nn.ModuleList(self.blocks)
+
 
     def forward(self, z):
         if self.normalize:
@@ -82,22 +84,23 @@ class Mapping(nn.Module):
 
 class AdaIN(nn.Module):
     def __init__(self,
-                 latent_size: int,  # Dimension of the latent space
-                 channels: int,  # The number of channels in the image
-                 ):
+                 latent_size: int,     # Dimension of the latent space
+                 channels: int,        # The number of channels in the image
+                ):
         super().__init__()
         self.size = latent_size
         self.channels = channels
 
         # Affine transformation
         self.A = nn.Linear(self.size, 2 * channels)
-
+        
         # Weights for noise
         self.B = nn.Parameter(torch.zeros(channels))
 
         # Initializing weights
         nn.init.xavier_normal_(self.A.weight.data)
         nn.init.zeros_(self.A.bias.data)
+        
 
     def forward(self, x, w):
         # Apply noise
@@ -107,20 +110,20 @@ class AdaIN(nn.Module):
         # Apply style
         x = Normalize_channels(x)
         style = self.A(w).view(2, -1, self.channels, 1, 1)
-        x = style[0] * x + style[1]
+        x = (1 + style[0]) * x + style[1]
         return x
 
 
 class BlockG(nn.Module):
     def __init__(self,
-                 res_in: int,  # Input image resolution
-                 res_out: int,  # Output image resolution
-                 in_channels: int,  # Input number of channels
-                 out_channels: int,  # Output number of channels
-                 latent_size: int,  # Dimension of the latent space
-                 first_block=False,  # Disables upsampling for the first block
-                 last_block=False,  # Disables activation for the last block
-                 bilinear_up=False,  # Uses bilinear upsampling, otherwise progressive
+                 res_in: int,          # Input image resolution
+                 res_out: int,         # Output image resolution
+                 in_channels: int,     # Input number of channels
+                 out_channels: int,    # Output number of channels
+                 latent_size: int,     # Dimension of the latent space
+                 first_block=False,    # Disables upsampling for the first block
+                 last_block=False,     # Disables activation for the last block
+                 bilinear_up=False,    # Uses bilinear upsampling, otherwise progressive
                  ):
         super().__init__()
         self.res_in = res_in
@@ -141,7 +144,8 @@ class BlockG(nn.Module):
             )
             nn.init.kaiming_normal_(self.up_sample[0].weight.data)
             nn.init.zeros_(self.up_sample[0].bias.data)
-
+            
+        
         # Creating layers
         self.AdaIN1 = AdaIN(self.latent_size, in_channels)
         self.Conv = nn.Conv2d(in_channels, out_channels, 3, 1, 1)
@@ -151,6 +155,7 @@ class BlockG(nn.Module):
         # Initializing weights
         nn.init.kaiming_normal_(self.Conv.weight.data)
         nn.init.zeros_(self.Conv.bias.data)
+
 
     def forward(self, x, w):
         assert len(x.shape) == 4
@@ -169,18 +174,19 @@ class BlockG(nn.Module):
 
 class Generator(nn.Module):
     def __init__(self,
-                 res: int,  # Generated image resolution
-                 RGB=True,  # Color or gray image
-                 deep_mapping=8,  # Mapping depth
-                 start_res=4,  # Initial resolution of the constant
-                 max_channels=512,  # Maximum number of channels in intermediate images
-                 latent_size=512,  # Dimension of the latent space
-                 bilinear=True,  # Using bilinear or progressive upsampling
-                 normalize=True,  # Normalization of the input vector z
-                 eps=1e-8,  # Parameter for normalization stability
+                 res: int,             # Generated image resolution
+                 RGB=True,             # Color or gray image
+                 deep_mapping=8,       #  Mapping depth
+                 start_res=4,          # Initial resolution of the constant
+                 channel_base=8192,    # Value, for calculating the number of intermediate channels
+                 max_channels=512,     # Maximum number of channels in intermediate images
+                 latent_size=512,      # Dimension of the latent space
+                 bilinear=True,        # Using bilinear or progressive upsampling
+                 normalize=True,       # Normalization of the input vector z
+                 eps=1e-8,             # Parameter for normalization stability
                  ):
         super().__init__()
-        assert 2 ** round(np.log2(res)) == res
+        assert 2**round(np.log2(res)) == res
         self.res = res
         self.out_channels = 3 if RGB else 1
         self.deep_mapping = deep_mapping
@@ -188,43 +194,48 @@ class Generator(nn.Module):
         self.eps = eps
 
         # Calculating the number of channels for each resolution
-        self.map_channels = Generate_map_channels(res)
-        self.map_channels[res] = self.out_channels
+        self.map_channels = Generate_map_channels(res, start_res, max_channels, channel_base)
 
         # Initializing layers
         self.mapping = Mapping(latent_size, deep_mapping, normalize, eps)
         self.const = nn.Parameter(torch.ones(max_channels, start_res, start_res))
         self.blocks = [BlockG(start_res, start_res, max_channels, self.map_channels[start_res], latent_size, first_block=True, bilinear_up=bilinear)]
+        self.to_rgb = nn.Conv2d(self.map_channels[res], self.out_channels, 1, 1)
+        
+        # Initializing weights
+        nn.init.kaiming_normal_(self.to_rgb.weight.data)
+        nn.init.zeros_(self.to_rgb.bias.data)
 
         # Creating blocks
         to_res = 8
         while to_res <= res:
-            in_channels = self.map_channels[to_res // 2]
+            in_channels = self.map_channels[to_res//2]
             out_channels = self.map_channels[to_res]
             self.blocks.append(
-                BlockG(to_res // 2, to_res, in_channels, out_channels, latent_size, last_block=(to_res == res), bilinear_up=bilinear)
+                BlockG(to_res//2, to_res, in_channels, out_channels, latent_size, last_block=(to_res == res), bilinear_up=bilinear)
             )
             to_res *= 2
-
+        
         # Registering parameters in the model
         self.blocks = nn.ModuleList(self.blocks)
 
+        
     def forward(self, z):
         w = self.mapping(z)
         img = self.const.expand(w.size(0), -1, -1, -1)
         for block in self.blocks:
             img = block(img, w)
-        return img
+        return self.to_rgb(img)
 
 
 class BlockD(nn.Module):
     def __init__(self,
-                 res_in: int,  # Input image resolution
-                 res_out: int,  # Output image resolution
-                 in_channels: int,  # Input number of channels
-                 out_channels: int,  # Output number of channels
-                 last_block=False,  # Disables non-linearity on the last block
-                 bilinear_down=True,  # Bilinear or progressive downsampling
+                 res_in: int,          # Input image resolution
+                 res_out: int,         # Output image resolution
+                 in_channels: int,     # Input number of channels
+                 out_channels: int,    # Output number of channels
+                 last_block=False,     # Disables non-linearity on the last block
+                 bilinear_down=True,   # Bilinear or progressive downsampling
                  ):
         super().__init__()
         self.res_in = res_in
@@ -242,10 +253,11 @@ class BlockD(nn.Module):
         self.Conv = nn.Conv2d(in_channels, out_channels, 3, 1, 1)
         self.act1 = nn.LeakyReLU(0.2)
         self.act2 = nn.LeakyReLU(0.2)
-
+        
         # initializing weights
         nn.init.kaiming_normal_(self.Conv.weight.data)
         nn.init.zeros_(self.Conv.bias.data)
+
 
     def forward(self, x):
         x = self.Conv(x)
@@ -257,36 +269,36 @@ class BlockD(nn.Module):
 
 class Discriminator(nn.Module):
     def __init__(self,
-                 res,  # Input resolution of images
-                 RGB=True,  # Color or gray images
-                 bilinear=False,  # Bilinear or progressive downsampling
-                 last_res=4,  # The last resolution of the image before the linear layers
-                 max_channels=512,  # Maximum number of channels in intermediate images
-                 ):
+                 res,                  # Input resolution of images
+                 RGB=True,             # Color or gray images
+                 bilinear=False,       # Bilinear or progressive downsampling
+                 last_res=4,           # The last resolution of the image before the linear layers
+                 channel_base=8192,    # Value, for calculating the number of intermediate channels
+                 max_channels=512,     # Maximum number of channels in intermediate images
+                ):
         super().__init__()
-        assert 2 ** round(np.log2(res)) == res
+        assert 2**round(np.log2(res)) == res
         self.res = res
         self.in_channels = 3 if RGB else 1
         self.blocks = []
 
         # Calculating the number of channels for each resolution
-        self.map_channels = Generate_map_channels(res, last_res, max_channels)
+        self.map_channels = Generate_map_channels(res, last_res, max_channels, channel_base)
 
         # Creating blocks
-        to = res // 2
+        to = res//2
         while to >= 4:
             if to == 4:
-                self.blocks.append(BlockD(2 * to, to, self.map_channels[2 * to], self.map_channels[to], True, bilinear))
+                self.blocks.append(BlockD(2*to, to, self.map_channels[2*to], self.map_channels[to], True, bilinear))
             else:
-                self.blocks.append(BlockD(2 * to, to, self.map_channels[2 * to], self.map_channels[to], bilinear_down=bilinear))
+                self.blocks.append(BlockD(2*to, to, self.map_channels[2*to], self.map_channels[to], bilinear_down=bilinear))
             to //= 2
 
         self.fromRGB = nn.Conv2d(self.in_channels, self.map_channels[res], 3, 1, 1)
         self.func = nn.Sequential(
-            nn.Linear(self.map_channels[4] * 4 ** 2, 512),
+            nn.Linear(self.map_channels[4] * 4**2, 512),
             nn.LeakyReLU(0.2),
             nn.Linear(512, 1),
-
         )
 
         # initializing weights
@@ -294,9 +306,10 @@ class Discriminator(nn.Module):
         nn.init.xavier_normal_(self.func[2].weight.data)
         nn.init.zeros_(self.func[0].bias.data)
         nn.init.zeros_(self.func[2].bias.data)
-
+        
         # Registering parameters in the model
         self.blocks = nn.ModuleList(self.blocks)
+
 
     def forward(self, img):
         img = img.view(-1, self.in_channels, self.res, self.res)
