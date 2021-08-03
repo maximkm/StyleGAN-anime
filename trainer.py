@@ -127,7 +127,5 @@ class GpGANTrainer(BaseGANTrainer):
         super().__init__(conf, **kwargs)
         
     def train_disc(self, real_imgs, fake_imgs):
-        real_logits = self.D(real_imgs)
-        fake_logits = self.D(fake_imgs)
         lambda_gp = self.conf["Loss_config"]["lambda_gp"]
-        return self.disc_loss(self.D, real_logits, fake_logits, lambda_gp)
+        return self.disc_loss(self.D, real_imgs, fake_imgs, lambda_gp)

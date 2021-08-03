@@ -1,8 +1,8 @@
 {
     "Generator": "R1",
     "Discriminator": "R1",
-    "Loss_gen": "wgan",
-    "Loss_disc": "wgan",
+    "Loss_gen": "r1",
+    "Loss_disc": "r1",
     "Optim_G": "RMSprop",
     "Optim_D": "RMSprop",
     "Gen_config": {
@@ -23,7 +23,7 @@
     "Loss_config": {
         "lambda_gp": 10
     },
-    "Trainer": "base",
+    "Trainer": "gp",
     "IMG_SIZE": 64,
     "z_dim": 256,
     "BATCH_SIZE": 512,

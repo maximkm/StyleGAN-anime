@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+from torch.autograd import grad
 from utils import register
 
 
@@ -80,9 +81,39 @@ def disc_wgan_gp_loss(D, real_imgs, fake_imgs, lambda_gp):
     fake_validity = D(fake_imgs.detach())
     # Adversarial loss
     d_loss = -torch.mean(real_validity) + torch.mean(fake_validity) + lambda_gp * gradient_penalty
+    return d_loss
     
     
 @gen_losses.add_to_registry("wgan-gp")
 def gen_wgan_gp_loss(logits_fake):
     loss = -logits_fake.mean()
+    return loss
+
+
+def r1loss(inputs, label=None):
+    # non-saturating loss with R1 regularization
+    l = -1 if label else 1
+    return F.softplus(l*inputs).mean()
+
+
+@disc_losses.add_to_registry("r1")
+def disc_r1_loss(D, real_imgs, fake_imgs, lambda_gp):
+    real_imgs.requires_grad = True
+    real_outputs = D(real_imgs)
+    d_real_loss = r1loss(real_outputs, True)
+    # Reference >> https://github.com/rosinality/style-based-gan-pytorch/blob/a3d000e707b70d1a5fc277912dc9d7432d6e6069/train.py
+    # little different with original DiracGAN
+    grad_real = grad(outputs=real_outputs.sum(), inputs=real_imgs, create_graph=True)[0]
+    grad_penalty = (grad_real.view(grad_real.size(0), -1).norm(2, dim=1) ** 2).mean()
+    grad_penalty = 0.5*lambda_gp*grad_penalty
+    D_x_loss = d_real_loss + grad_penalty
+
+    D_z_loss = r1loss(fake_imgs, False)
+    D_loss = D_x_loss + D_z_loss
+    return D_loss
+    
+    
+@gen_losses.add_to_registry("r1")
+def gen_r1_loss(logits_fake):
+    loss = r1loss(logits_fake, True)
     return loss
