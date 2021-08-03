@@ -1,0 +1,41 @@
+{
+    "Generator": "StyleGAN",
+    "Discriminator": "StyleGAN",
+    "Loss_gen": "wgan",
+    "Loss_disc": "wgan",
+    "Optim_G": "Adam",
+    "Optim_D": "Adam",
+    "Gen_config": {
+        "res": 64,
+        "latent_size": 512,
+        "deep_mapping": 6
+    },
+    "Disc_config": {
+        "res": 64
+    },
+    "Optim_G_config": {
+        "lr": 0.0003,
+        "betas": [
+            0.5,
+            0.55
+        ]
+    },
+    "Optim_D_config": {
+        "lr": 0.0003,
+        "betas": [
+            0.5,
+            0.55
+        ]
+    },
+    "Loss_config": {
+        "lambda_gp": 10
+    },
+    "Trainer": "base",
+    "IMG_SIZE": 64,
+    "z_dim": 256,
+    "BATCH_SIZE": 512,
+    "UPD_FOR_GEN": 1,
+    "epochs": 10000,
+    "Dataset": "DataGAN",
+    "Weight_dir": "Weight"
+}
