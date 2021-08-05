@@ -1,9 +1,11 @@
 from IPython.display import clear_output
 from utils import register, images
+from torch.autograd import grad
 from tqdm import tqdm
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import warnings
 import wandb
 
@@ -77,14 +79,16 @@ class BaseGANTrainer:
             bar = tqdm(self.dataloader)
             loss_G, loss_D = [], []
             for i, real_img in enumerate(bar):
+                self.G.zero_grad()
                 real_imgs = real_img.to(self.device)
-                self.optim_D.zero_grad()
-
+                
                 # Generate a batch of images
                 fake_imgs = self.generate_images(real_imgs.size(0)).detach()
 
                 # Update D network
                 d_loss = self.train_disc(real_imgs, fake_imgs)
+                
+                self.D.zero_grad()
                 d_loss.backward()
                 self.optim_D.step()
 
@@ -92,12 +96,13 @@ class BaseGANTrainer:
                 self.logger({"loss_D":d_loss.item()})
 
                 if i % self.conf['UPD_FOR_GEN'] == 0:
-                    self.optim_G.zero_grad()
                     # Generate a batch of images
                     fake_imgs = self.generate_images(real_imgs.size(0))
 
                     # Update G network
                     g_loss = self.train_gen(fake_imgs)
+                    
+                    self.G.zero_grad()
                     g_loss.backward()
                     self.optim_G.step()
 
@@ -114,17 +119,18 @@ class BaseGANTrainer:
                         self.G.train()
 
                 clear_output(wait=True)        
-                bar.set_description(f"Epoch {epoch + 1}/{self.conf['epochs']} [{i+1}, {len(self.dataloader)}]")
+                bar.set_description(f"Epoch {epoch + 1}/{self.conf['epochs']} D_loss: {round(loss_D[-1], 2)} G_loss: {round(loss_G[-1], 2)}")
 
             # Save model
             self.save_model(epoch)
             self.logger({"mean_loss_G":np.mean(loss_G), "mean_loss_D":np.mean(loss_D)})
-            
+
 
 @trainers.add_to_registry(name="gp")            
 class GpGANTrainer(BaseGANTrainer):
     def __init__(self, conf, **kwargs):
-        super().__init__(conf, **kwargs)
+        super().__init__(conf, **kwargs) 
+        
         
     def train_disc(self, real_imgs, fake_imgs):
         lambda_gp = self.conf["Loss_config"]["lambda_gp"]

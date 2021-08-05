@@ -107,8 +107,9 @@ def disc_r1_loss(D, real_imgs, fake_imgs, lambda_gp):
     grad_penalty = (grad_real.view(grad_real.size(0), -1).norm(2, dim=1) ** 2).mean()
     grad_penalty = 0.5*lambda_gp*grad_penalty
     D_x_loss = d_real_loss + grad_penalty
-
-    D_z_loss = r1loss(fake_imgs, False)
+    
+    fake_logits = D(fake_imgs)
+    D_z_loss = r1loss(fake_logits, False)
     D_loss = D_x_loss + D_z_loss
     return D_loss
     

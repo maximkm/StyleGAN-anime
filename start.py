@@ -86,8 +86,9 @@ def init_train(path_to_config, wandb_set):
         epochs = sorted([name_to_epoch(elem) for elem in os.listdir(conf["Weight_dir"]) if '.pth' in elem])
         if len(epochs) > 0:
             last_epoch = epochs[-1]
-            print(f'Load the pre-trained weight {last_epoch}')
+            print(f'{conf["Weight_dir"]}/weight {last_epoch}.pth')
             state = torch.load(f'{conf["Weight_dir"]}/weight {last_epoch}.pth')
+            print(f'Load the pre-trained weight {last_epoch}')
             G.load_state_dict(state['G'])
             D.load_state_dict(state['D'])
             start_epoch = state['start_epoch']
@@ -108,13 +109,12 @@ def init_train(path_to_config, wandb_set):
     optim_D = getattr(torch.optim, conf['Optim_D'])(D.parameters(), **conf["Optim_D_config"])
     
     # Load train image
-    transform = transforms.Compose(
-        [
-         transforms.Resize((conf['IMG_SIZE'], conf['IMG_SIZE'])),
-         transforms.ToTensor(),
-         transforms.Normalize((0.5), (0.5)),
-         ]
-        )
+    transform = transforms.Compose([
+        transforms.Resize((64, 64)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=(0.5, 0.5, 0.5),
+        std=(0.5, 0.5, 0.5))
+    ])
 
     dataset = ImageDataset(conf["Dataset"], transform=transform)
     dataloader = DataLoader(dataset, batch_size=conf["BATCH_SIZE"], shuffle=True, num_workers=4, pin_memory=False, drop_last=True)

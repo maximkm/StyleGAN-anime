@@ -26,7 +26,7 @@
     "Trainer": "gp",
     "IMG_SIZE": 64,
     "z_dim": 256,
-    "BATCH_SIZE": 512,
+    "BATCH_SIZE": 256,
     "UPD_FOR_GEN": 1,
     "epochs": 10000,
     "Dataset": "DataGAN",
