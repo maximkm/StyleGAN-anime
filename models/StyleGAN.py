@@ -48,7 +48,7 @@ class Mapping(nn.Module):
         self.blocks = []
 
         # Creating blocks
-        for i in range(self.deep - 1):
+        for i in range(self.deep):
             self.blocks.append(nn.Sequential(
                 nn.Linear(self.dim, self.dim),
                 nn.LeakyReLU(0.2),
@@ -57,10 +57,6 @@ class Mapping(nn.Module):
             # Initializing weights
             nn.init.xavier_normal_(self.blocks[-1][0].weight.data)
             nn.init.zeros_(self.blocks[-1][0].bias.data)
-
-        self.blocks.append(nn.Linear(self.dim, self.dim))
-        nn.init.xavier_normal_(self.blocks[-1].weight.data)
-        nn.init.zeros_(self.blocks[-1].bias.data)
 
         # Registering parameters in the model
         self.blocks = nn.ModuleList(self.blocks)
@@ -94,13 +90,14 @@ class AdaIN(nn.Module):
 
     def forward(self, x, w):
         # Apply noise
-        noise = torch.randn(x.shape, device=x.device)
+        noise = torch.randn(x.size(0), 1, x.size(2), x.size(3), device=x.device, dtype=x.dtype)
         x = x + self.B.view(1, -1, 1, 1) * noise
 
         # Apply style
         x = PixelNorm(x)
-        style = self.A(w).view(2, -1, self.channels, 1, 1)
-        x = (1 + style[0]) * x + style[1]
+        shape = [-1, 2, x.size(1)] + (x.dim() - 2) * [1]
+        style = self.A(w).view(shape)
+        x = x*(style[:, 0] + 1.) + style[:, 1]
         return x
 
 
@@ -111,6 +108,7 @@ class BlockG(nn.Module):
                  in_channels: int,     # Input number of channels
                  out_channels: int,    # Output number of channels
                  latent_size: int,     # Dimension of the latent space
+                 first_block=False,    # Delete first convolution
                  ):
         super().__init__()
         assert res_out == res_in or res_out == 2 * res_in
@@ -119,19 +117,27 @@ class BlockG(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.latent_size = latent_size
+        self.first_block = first_block
 
         # Upsampling
         self.up_sample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
 
         # Creating layers
+        if not first_block:
+            self.Conv1 = nn.Conv2d(in_channels, in_channels, 3, 1, 1)
+            
         self.AdaIN1 = AdaIN(self.latent_size, in_channels)
-        self.Conv = nn.Conv2d(in_channels, out_channels, 3, 1, 1)
+        self.Conv2 = nn.Conv2d(in_channels, out_channels, 3, 1, 1)
         self.Act = nn.LeakyReLU(0.2)
         self.AdaIN2 = AdaIN(self.latent_size, out_channels)
 
         # Initializing weights
-        nn.init.kaiming_normal_(self.Conv.weight.data)
-        nn.init.zeros_(self.Conv.bias.data)
+        if not first_block:
+            nn.init.xavier_normal_(self.Conv1.weight.data)
+            nn.init.zeros_(self.Conv1.bias.data) 
+            
+        nn.init.xavier_normal_(self.Conv2.weight.data)
+        nn.init.zeros_(self.Conv2.bias.data)
 
     def forward(self, x, w):
         assert len(x.shape) == 4
@@ -140,8 +146,13 @@ class BlockG(nn.Module):
         if self.res_out == 2 * self.res_in:
             x = self.up_sample(x)
 
+        if not self.first_block:
+            x = self.Conv1(x)
+            x = self.Act(x)
+            
         x = self.AdaIN1(x, w)
-        x = self.Conv(x)
+        x = self.Conv2(x)
+        x = self.Act(x)
         x = self.AdaIN2(x, w)
         return x
 
@@ -173,13 +184,12 @@ class Generator(nn.Module):
         self.mapping = Mapping(latent_size, deep_mapping, normalize, eps)
         self.const = nn.Parameter(torch.ones(max_channels, start_res, start_res))
         self.blocks = [
-            BlockG(start_res, start_res, max_channels, self.map_channels[start_res], latent_size),
-            BlockG(start_res, start_res, self.map_channels[start_res], self.map_channels[start_res], latent_size)
+            BlockG(start_res, start_res, max_channels, self.map_channels[start_res], latent_size, True),
         ]
         self.to_rgb = nn.Conv2d(self.map_channels[res], self.out_channels, 1, 1)
 
         # Initializing weights
-        nn.init.kaiming_normal_(self.to_rgb.weight.data)
+        nn.init.xavier_normal_(self.to_rgb.weight.data)
         nn.init.zeros_(self.to_rgb.bias.data)
 
         # Creating blocks
@@ -189,7 +199,6 @@ class Generator(nn.Module):
             in_channels = self.map_channels[cur_res]
             out_channels = self.map_channels[to_res]
             self.blocks.append(BlockG(cur_res, to_res, in_channels, out_channels, latent_size))
-            self.blocks.append(BlockG(to_res, to_res, out_channels, out_channels, latent_size))
             to_res *= 2
 
         # Registering parameters in the model
@@ -218,29 +227,28 @@ class BlockD(nn.Module):
 
         # Initializing layers
         self.Conv1 = nn.Conv2d(in_channels, in_channels, 3, 1, 1)
-        self.act1 = nn.LeakyReLU(0.2)
+        self.Act = nn.LeakyReLU(0.2)
 
         # initializing weights
-        nn.init.kaiming_normal_(self.Conv1.weight.data)
+        nn.init.xavier_normal_(self.Conv1.weight.data)
         nn.init.zeros_(self.Conv1.bias.data)
 
         if 2 * res_out == res_in:
             self.down_sample = nn.AvgPool2d(3, 2, padding=1)
         else:
             self.Conv2 = nn.Conv2d(in_channels, out_channels, 3, 1, 1)
-            self.act2 = nn.LeakyReLU(0.2)
 
-            nn.init.kaiming_normal_(self.Conv2.weight.data)
+            nn.init.xavier_normal_(self.Conv2.weight.data)
             nn.init.zeros_(self.Conv2.bias.data)
 
     def forward(self, x):
         x = self.Conv1(x)
-        x = self.act1(x)
+        x = self.Act(x)
         if 2 * self.res_out == self.res_in:
             x = self.down_sample(x)
         else:
             x = self.Conv2(x)
-            x = self.act2(x)
+            x = self.Act(x)
         return x
 
 
