@@ -6,12 +6,12 @@
     "Optim_G": "RMSprop",
     "Optim_D": "RMSprop",
     "Gen_config": {
-        "res": 64,
-        "latent_size": 64,
-        "deep_mapping": 4
+        "res": 256,
+        "latent_size": 256,
+        "deep_mapping": 8
     },
     "Disc_config": {
-        "res": 64
+        "res": 256
     },
     "Optim_G_config": {
         "lr": 0.0001,
@@ -25,11 +25,11 @@
         "lambda_gp": 10
     },
     "Trainer": "gp",
-    "IMG_SIZE": 64,
-    "z_dim": 64,
-    "BATCH_SIZE": 512,
+    "IMG_SIZE": 256,
+    "z_dim": 256,
+    "BATCH_SIZE": 64,
     "UPD_FOR_GEN": 1,
     "epochs": 10000,
-    "Dataset": "DataGAN",
+    "Dataset": "data/DataGAN256",
     "Weight_dir": "Weight"
 }

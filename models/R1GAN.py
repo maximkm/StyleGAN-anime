@@ -21,6 +21,7 @@ class ResidualBlock(nn.Module):
             nn.LeakyReLU(0.2)
         )
         self.proj = nn.Conv2d(inplanes, planes, 1) if inplanes != planes else None
+        
     
     def forward(self, x):
         identity = x

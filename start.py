@@ -1,5 +1,6 @@
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
+import torch.nn as nn
 import torch
 import sys
 from PIL import Image
@@ -43,7 +44,7 @@ class ImageDataset(Dataset):
         return self.samples[idx]
 
 
-def init_train(path_to_config, wandb_set):
+def init_train(path_to_config, wandb_set, load_dataset=True):
     # Loading configurations
     with open(path_to_config, "r") as fp:
         conf = json.load(fp)
@@ -78,9 +79,11 @@ def init_train(path_to_config, wandb_set):
     start_epoch = 0
     G = generators[conf['Generator']](**conf['Gen_config'])
     D = discriminators[conf['Discriminator']](**conf['Disc_config'])
+    print(G)
+    print(D)
 
     # Load the pre-trained weight
-    conf["Weight_dir"] = os.path.join(conf["Weight_dir"], f'{conf["Generator"]} {conf["IMG_SIZE"]}')
+    conf["Weight_dir"] = os.path.join(conf["Weight_dir"], f'{conf["Generator"]} {conf["Discriminator"]} {conf["IMG_SIZE"]}')
     if os.path.exists(conf["Weight_dir"]):
         name_to_epoch = lambda x: int(x.replace('.pth', '').replace('weight ', ''))
         epochs = sorted([name_to_epoch(elem) for elem in os.listdir(conf["Weight_dir"]) if '.pth' in elem])
@@ -110,14 +113,17 @@ def init_train(path_to_config, wandb_set):
     
     # Load train image
     transform = transforms.Compose([
-        transforms.Resize((64, 64)),
+        transforms.Resize((conf["IMG_SIZE"], conf["IMG_SIZE"])),
         transforms.ToTensor(),
         transforms.Normalize(mean=(0.5, 0.5, 0.5),
         std=(0.5, 0.5, 0.5))
     ])
 
-    dataset = ImageDataset(conf["Dataset"], transform=transform)
-    dataloader = DataLoader(dataset, batch_size=conf["BATCH_SIZE"], shuffle=True, num_workers=4, pin_memory=False, drop_last=True)
+    if load_dataset:
+        dataset = ImageDataset(conf["Dataset"], transform=transform)
+        dataloader = DataLoader(dataset, batch_size=conf["BATCH_SIZE"], shuffle=True, num_workers=4, pin_memory=False, drop_last=True)
+    else:
+        dataloader = None
     
     # Packaging of parameters for the trainer
     form_for_trainer = {

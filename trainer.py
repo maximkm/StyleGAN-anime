@@ -40,6 +40,8 @@ class BaseGANTrainer:
                 project=self.conf['Generator'],
                 config=self.conf
             )
+            wandb.watch(self.G)
+            wandb.watch(self.D)
           
 
     def logger(self, data):
