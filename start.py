@@ -44,7 +44,7 @@ class ImageDataset(Dataset):
         return self.samples[idx]
 
 
-def init_train(path_to_config, wandb_set, load_dataset=True):
+def init_train(path_to_config, wandb_set=False, load_dataset=True):
     # Loading configurations
     with open(path_to_config, "r") as fp:
         conf = json.load(fp)

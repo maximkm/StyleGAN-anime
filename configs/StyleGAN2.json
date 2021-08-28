@@ -1,0 +1,35 @@
+{
+    "Generator": "StyleGAN2",
+    "Discriminator": "StyleGAN2",
+    "Loss_gen": "r1",
+    "Loss_disc": "r1",
+    "Optim_G": "RMSprop",
+    "Optim_D": "RMSprop",
+    "Gen_config": {
+        "res": 64,
+        "latent_size": 256,
+        "deep_mapping": 4
+    },
+    "Disc_config": {
+        "res": 64
+    },
+    "Optim_G_config": {
+        "lr": 0.0001,
+        "alpha": 0.99
+    },
+    "Optim_D_config": {
+        "lr": 0.0001,
+        "alpha": 0.99
+    },
+    "Loss_config": {
+        "lambda_gp": 10
+    },
+    "Trainer": "gp",
+    "IMG_SIZE": 64,
+    "z_dim": 256,
+    "BATCH_SIZE": 64,
+    "UPD_FOR_GEN": 1,
+    "epochs": 10000,
+    "Dataset": "data/DataGAN",
+    "Weight_dir": "Weight"
+}

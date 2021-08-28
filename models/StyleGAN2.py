@@ -1,5 +1,6 @@
 from collections import OrderedDict
 from utils import register
+import torch.nn.functional as F
 import torch.nn as nn
 import torch
 import numpy as np
@@ -69,37 +70,55 @@ class Mapping(nn.Module):
             z = block(z)
         return z
 
-
-class AdaIN(nn.Module):
+class Conv2Demod(nn.Module):
     def __init__(self,
-                 latent_size: int,     # Dimension of the latent space
-                 channels: int,        # The number of channels in the image
-                 ):
+                 in_channels,
+                 out_channels,
+                 kernel_size=3,
+                 stride=1,
+                 demod=True,
+                 eps=1e-8
+                ):
         super().__init__()
-        self.size = latent_size
-        self.channels = channels
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.demod = demod
+        self.eps = eps
+        
+        self.weight = nn.Parameter(torch.randn((out_channels, in_channels, kernel_size, kernel_size)))
+        nn.init.xavier_normal_(self.weight)
 
-        # Affine transformation
-        self.A = nn.Linear(self.size, 2 * channels)
 
-        # Weights for noise
-        self.B = nn.Parameter(torch.zeros(channels))
+    def __get_same_padding(self, size):
+        # reference: https://stats.stackexchange.com/a/410270
+        return ((self.stride - 1)*size - self.stride + self.kernel_size) // 2
 
-        # Initializing weights
-        nn.init.xavier_normal_(self.A.weight.data)
-        nn.init.zeros_(self.A.bias.data)
 
-    def forward(self, x, w):
-        # Apply noise
-        noise = torch.randn(x.size(0), 1, x.size(2), x.size(3), device=x.device, dtype=x.dtype)
-        x = x + self.B.view(1, -1, 1, 1) * noise
+    def forward(self, img, s):
+        # reference: https://github.com/lucidrains/stylegan2-pytorch/blob/master/stylegan2_pytorch/stylegan2_pytorch.py
+        b, c, height, weight = img.shape
+        
+        w1 = s.view(b, 1, -1, 1, 1)
+        w2 = self.weight.view(1, *self.weight.shape)
+        weights = w2 * (w1 + 1)
+        
+        if self.demod:
+            d = ((weights ** 2).sum(dim=(2, 3, 4), keepdim=True) + self.eps).rsqrt()
+            weights = weights * d
+        
+        img = img.reshape(1, b * c, height, weight)
 
-        # Apply style
-        x = PixelNorm(x)
-        shape = [-1, 2, x.size(1)] + (x.dim() - 2) * [1]
-        style = self.A(w).view(shape)
-        x = x*(style[:, 0] + 1.) + style[:, 1]
-        return x
+        _, _, *ws = weights.shape
+        weights = weights.view(b * self.out_channels, *ws)
+
+        assert height == weight
+        padding = self.__get_same_padding(height)
+        img = F.conv2d(img, weights, padding=padding, groups=b)
+
+        img = img.reshape(b, self.out_channels, height, weight)
+        return img
 
 
 class BlockG(nn.Module):
@@ -122,17 +141,21 @@ class BlockG(nn.Module):
         self.up_sample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
 
         # Creating layers
-        self.Conv1 = nn.Conv2d(in_channels, in_channels, 3, 1, 1)
-        self.AdaIN1 = AdaIN(self.latent_size, in_channels)
-        self.Conv2 = nn.Conv2d(in_channels, out_channels, 3, 1, 1)
+        self.Conv1 = Conv2Demod(in_channels, out_channels, 3, 1)
+        self.Conv2 = Conv2Demod(out_channels, out_channels, 3, 1)
+        self.A1 = nn.Linear(latent_size, in_channels)
+        self.A2 = nn.Linear(latent_size, out_channels)
         self.Act = nn.LeakyReLU(0.2)
-        self.AdaIN2 = AdaIN(self.latent_size, out_channels)
+
+        # Weights for noise
+        self.B1 = nn.Parameter(torch.zeros(out_channels))
+        self.B2 = nn.Parameter(torch.zeros(out_channels))
 
         # Initializing weights
-        nn.init.xavier_normal_(self.Conv1.weight.data)
-        nn.init.zeros_(self.Conv1.bias.data) 
-        nn.init.xavier_normal_(self.Conv2.weight.data)
-        nn.init.zeros_(self.Conv2.bias.data)
+        nn.init.xavier_normal_(self.A1.weight.data)
+        nn.init.zeros_(self.A1.bias.data)
+        nn.init.xavier_normal_(self.A2.weight.data)
+        nn.init.zeros_(self.A2.bias.data)
 
     def forward(self, x, w):
         assert len(x.shape) == 4
@@ -141,16 +164,21 @@ class BlockG(nn.Module):
         if self.res_out == 2 * self.res_in:
             x = self.up_sample(x)
 
-        x = self.Conv1(x)
+        style1 = self.A1(w)
+        x = self.Conv1(x, style1)
         x = self.Act(x)
-        x = self.AdaIN1(x, w)
-        x = self.Conv2(x)
+        noise1 = torch.randn(x.size(0), 1, x.size(2), x.size(3), device=x.device, dtype=x.dtype)
+        x = x + self.B1.view(1, -1, 1, 1) * noise1
+        
+        style2 = self.A2(w)
+        x = self.Conv2(x, style2)
         x = self.Act(x)
-        x = self.AdaIN2(x, w)
+        noise2 = torch.randn(x.size(0), 1, x.size(2), x.size(3), device=x.device, dtype=x.dtype)
+        x = x + self.B2.view(1, -1, 1, 1) * noise2
         return x
 
 
-@generators.add_to_registry("StyleGAN")
+@generators.add_to_registry("StyleGAN2")
 class Generator(nn.Module):
     def __init__(self,
                  res: int,             # Generated image resolution
@@ -242,7 +270,7 @@ class BlockD(nn.Module):
         return x
 
 
-@discriminators.add_to_registry("StyleGAN")
+@discriminators.add_to_registry("StyleGAN2")
 class Discriminator(nn.Module):
     def __init__(self,
                  res,                  # Input resolution of images
