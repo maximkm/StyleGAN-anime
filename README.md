@@ -88,6 +88,17 @@ LoadWeights(Trainer, 'Weight/weight 42.pth')
 SaveImages(Trainer, dir='img', cnt=10) 
 ```
 
+Example of creating a video using the example of interpolation between two images:
+
+```python
+from utils.video import generate_video
+
+samples = from_to_video(z_1, z_2)  # A tensor consisting of image frames
+generate_video(samples)
+```
+
+<img src="img/interpolate.gif" alt="StyleGAN 256" width="250"/>
+
 ## Detailed information on the implementation
 
 To support multi GPU, `DataParallel` was used, instead of `DistributedDataParallel`, when testing StyleGAN on 4 x Tesla V100 GPU, a fairly high utilization was achieved:
