@@ -27,7 +27,7 @@ It is recommended packages to run `PyTorch` version 1.9.0+cu102 or higher, `Pill
 |       trainer.py         # Universal Trainer class for train loop
 |       losses.py          # Loss functions
 |
-+---weight   
++---weight                 # Trained weights
 \---utils                  # Support functions for working with images and models
     |   images.py
     |   register.py
@@ -127,10 +127,10 @@ To increase utilization, a written loader was also used, which loads the entire 
 
 * 21.6k images, 64x64, 217 MB: [Anime Faces](https://www.kaggle.com/soumikrakshit/anime-faces)
 
-* 63.6k images, $\leqslant$ 64x64, 396 MB: [Anime Face Dataset](https://www.kaggle.com/splcher/animefacedataset)
+* 63.6k images, ⩽ 64x64, 396 MB: [Anime Face Dataset](https://www.kaggle.com/splcher/animefacedataset)
 
 * 92.2k images, 256x256, 1 GB: [another anime face dataset](https://www.kaggle.com/scribbless/another-anime-face-dataset)
 
 * 140k images, 512x512, 11 GB: [animefaces-danbooru](https://www.kaggle.com/lukexng/animefaces-512x512)
 
-* 500k images, $\geqslant$ 512x512, 99 GB: [Aligned Anime Faces](https://www.kaggle.com/reitanaka/alignedanimefaces)
+* 500k images, ⩾ 512x512, 99 GB: [Aligned Anime Faces](https://www.kaggle.com/reitanaka/alignedanimefaces)
