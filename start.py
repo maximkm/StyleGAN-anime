@@ -11,8 +11,10 @@ import json
 import os
 
 
-def dynamic_import(module):
-    return importlib.import_module(module)
+def dynamic_import(name):
+    module = importlib.import_module(name)
+    importlib.reload(module)
+    return module
 
 
 def get_py_modules(files_dir):
@@ -91,6 +93,9 @@ def init_train(path_to_config, wandb_set=False, load_dataset=True):
             last_epoch = epochs[-1]
             print(f'{conf["Weight_dir"]}/weight {last_epoch}.pth')
             state = torch.load(f'{conf["Weight_dir"]}/weight {last_epoch}.pth')
+            del_module = lambda key: key if 'module.' != key[:7] else key[7:]
+            state['G'] = {del_module(key): value for key, value in state['G'].items()}
+            state['D'] = {del_module(key): value for key, value in state['D'].items()}
             print(f'Load the pre-trained weight {last_epoch}')
             G.load_state_dict(state['G'])
             D.load_state_dict(state['D'])

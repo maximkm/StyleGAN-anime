@@ -59,13 +59,13 @@ For more detailed information on configuring configs, see the wiki page [configu
 
 ## Examples of generation
 
-Many launches were conducted for the selection of hyperparameters and testing, the result of training one of the StyleGAN launches with a resolution of 64x64 after 1 day of training on 1 x Tesla V100, on a dataset of 20k images with a resolution of 64x64, is shown below.
+Many launches were conducted for the selection of hyperparameters and testing, the result of training one of the StyleGAN launches with a resolution of 64x64 after 1 day of training on 4 x Tesla V100, on a dataset of 20k images with a resolution of 64x64, is shown below.
 
-<img src="img/64x64 ex1.png" alt="StyleGAN 64" width="700"/>
+<img src="img/64x64 ex1.png" alt="StyleGAN 64" width="900"/>
 
 Also, the result of training the StyleGAN model for a resolution of 256x256, which was trained for 1.5 days on a 4 x Tesla V100, on a dataset of 92k images with a resolution of 256x256, is shown below:
 
-<img src="img/256x256 ex1.png" alt="StyleGAN 256" width="700"/>
+<img src="img/256x256 ex1.png" alt="StyleGAN 256" width="900"/>
 
 The images are obtained by denormalization, so their saturation can be adjusted
 
@@ -91,13 +91,13 @@ SaveImages(Trainer, dir='img', cnt=10)
 Example of creating a video using the example of interpolation between two images:
 
 ```python
-from utils.video import generate_video
+from utils.video import GenerateVideo
 
-samples = from_to_video(z_1, z_2)  # A tensor consisting of image frames
-generate_video(samples)
+samples = FromToVideo(z_1, z_2)  # A tensor consisting of image frames
+GenerateVideo(samples)
 ```
 
-<img src="img/interpolate.gif" alt="StyleGAN 256" width="250"/>
+<img src="img/interpolate.gif" alt="StyleGAN 256" width="350"/>
 
 ## Detailed information on the implementation
 

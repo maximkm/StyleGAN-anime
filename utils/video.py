@@ -2,7 +2,7 @@ from IPython.display import clear_output, HTML, display
 from matplotlib import animation, pyplot as plt
 
 
-def generate_video(samples_list, delay=1000):
+def GenerateVideo(samples_list, delay=1000):
     def process_image(img):
         if len(img.shape) == 4:
             img = img[0]
