@@ -11,9 +11,7 @@ It is recommended packages to run `PyTorch` version 1.9.0+cu102 or higher, `Pill
 
 ```bash
 |   start.py               # Loader of models and dataset
-|   losses.py              # Loss functions
 |   starter.ipynb          # A notebook for experiments
-|   trainer.py             # Universal Trainer class for train loop
 |           
 +---configs                # Configurations for running different models
 |       R1GAN.json
@@ -24,17 +22,23 @@ It is recommended packages to run `PyTorch` version 1.9.0+cu102 or higher, `Pill
 |       R1GAN.py
 |       StyleGAN.py
 |       StyleGAN2.py
-|       
+|
++---src
+|       trainer.py         # Universal Trainer class for train loop
+|       losses.py          # Loss functions
+|
++---weight   
 \---utils                  # Support functions for working with images and models
     |   images.py
     |   register.py
     |   video.py
     |   weights.py
-    |   
-
+    |
 ```
 
 ## Starting training
+
+<blockquote class="imgur-embed-pub" lang="en" data-id="a/vnTq5L8" data-context="false" ><a href="//imgur.com/a/vnTq5L8"></a></blockquote><script async src="//s.imgur.com/min/embed.js" charset="utf-8"></script>
 
 Example of starting model training:
 
@@ -63,9 +67,9 @@ Many launches were conducted for the selection of hyperparameters and testing, t
 
 <img src="img/64x64 ex.png" alt="StyleGAN 64" width="900"/>
 
-Also, the result of training the StyleGAN model for a resolution of 256x256, which was trained for 1.5 days on a 4 x Tesla V100, on a dataset of 92k images with a resolution of 256x256, is shown below:
+Also, the result of training the StyleGAN model for a resolution of 256x256, which was trained for 4 days on a 4 x Tesla V100, on a dataset of 92k images with a resolution of 256x256, is shown below:
 
-<img src="img/256x256 ex1.png" alt="StyleGAN 256" width="900"/>
+<img src="img/256x256 ex.png" alt="StyleGAN 256" width="900"/>
 
 The images are obtained by denormalization, so their saturation can be adjusted
 

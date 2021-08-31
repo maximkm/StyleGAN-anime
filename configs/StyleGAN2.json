@@ -31,5 +31,5 @@
     "UPD_FOR_GEN": 1,
     "epochs": 10000,
     "Dataset": "data/DataGAN",
-    "Weight_dir": "Weight"
+    "Weight_dir": "weight"
 }

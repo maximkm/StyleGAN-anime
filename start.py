@@ -63,14 +63,14 @@ def init_train(path_to_config, wandb_set=False, load_dataset=True):
     assert conf["Discriminator"] in discriminators.keys()
     
     # Loading the loss functions
-    losses = dynamic_import('losses')
+    losses = dynamic_import('src.losses')
     losses_gen = losses.gen_losses
     losses_disc = losses.disc_losses
     assert conf["Loss_gen"] in losses_gen.keys()
     assert conf["Loss_disc"] in losses_disc.keys()
     
     # Loading the trainer
-    trainers = dynamic_import('trainer').trainers
+    trainers = dynamic_import('src.trainer').trainers
     assert conf["Trainer"] in trainers.keys()
     
     # Checking the optimizer
