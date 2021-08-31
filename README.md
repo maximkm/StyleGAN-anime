@@ -38,8 +38,6 @@ It is recommended packages to run `PyTorch` version 1.9.0+cu102 or higher, `Pill
 
 ## Starting training
 
-<blockquote class="imgur-embed-pub" lang="en" data-id="a/vnTq5L8" data-context="false" ><a href="//imgur.com/a/vnTq5L8"></a></blockquote><script async src="//s.imgur.com/min/embed.js" charset="utf-8"></script>
-
 Example of starting model training:
 
 ```bash
