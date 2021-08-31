@@ -97,7 +97,7 @@ samples = FromToVideo(z_1, z_2)  # A tensor consisting of image frames
 GenerateVideo(samples)
 ```
 
-<img src="img/interpolate_1.gif" alt="StyleGAN 256" width="350"/>
+<img src="img/interpolate.gif" alt="interpolate" width="350"/>
 
 ## Detailed information on the implementation
 
