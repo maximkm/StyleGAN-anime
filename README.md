@@ -61,7 +61,7 @@ For more detailed information on configuring configs, see the wiki page [configu
 
 Many launches were conducted for the selection of hyperparameters and testing, the result of training one of the StyleGAN launches with a resolution of 64x64 after 1 day of training on 4 x Tesla V100, on a dataset of 20k images with a resolution of 64x64, is shown below.
 
-<img src="img/64x64 ex1.png" alt="StyleGAN 64" width="900"/>
+<img src="img/64x64 ex.png" alt="StyleGAN 64" width="900"/>
 
 Also, the result of training the StyleGAN model for a resolution of 256x256, which was trained for 1.5 days on a 4 x Tesla V100, on a dataset of 92k images with a resolution of 256x256, is shown below:
 
@@ -97,7 +97,7 @@ samples = FromToVideo(z_1, z_2)  # A tensor consisting of image frames
 GenerateVideo(samples)
 ```
 
-<img src="img/interpolate.gif" alt="StyleGAN 256" width="350"/>
+<img src="img/interpolate_1.gif" alt="StyleGAN 256" width="350"/>
 
 ## Detailed information on the implementation
 
