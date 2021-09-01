@@ -7,6 +7,8 @@ Now a universal loader is implemented for any standard models and loss functions
 
 It is recommended packages to run `PyTorch` version 1.9.0+cu102 or higher, `Pillow`, optional `wandb`.
 
+Due to the limitations of git LFS, all pre-trained weights were uploaded to [google drive](https://drive.google.com/drive/folders/1TugZwc8Hqw_dZ0B5NFNqZW_tZQPfM4ee?usp=sharing).
+
 ## Structure in the repository:
 
 ```bash
@@ -46,7 +48,7 @@ python3 start.py "configs/StyleGAN.json" True
 
 All training begins with running a script `start.py`, which is fed a json file, for example, `"config/StyleGAN.json"` and the next parameter is to enable or disable `wandb`, which is disabled by default.
 
-Since a universal loader for GAN training was implemented, it was decided to transfer all the settings using a json file and `start.py` it takes the creation of a trainer and loading all the parameters from this config into it. For more detailed information on adding your models and your loss functions to the loader, see the wiki page [universal Loader](https://github.com/maximkm/StyleGAN/wiki/Universal-Loader).
+Since a universal loader for GAN training was implemented, it was decided to transfer all the settings using a json file and `start.py` it takes the creation of a trainer and loading all the parameters from this config into it. For more detailed information on adding your models and your loss functions to the loader, see the wiki page [universal loader](https://github.com/maximkm/StyleGAN/wiki/Universal-Loader).
 
 Another way, for example, for training in jupiter notebook:
 
