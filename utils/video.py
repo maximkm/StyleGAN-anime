@@ -1,4 +1,4 @@
-from IPython.display import clear_output, HTML, display
+from IPython.display import HTML, display
 from matplotlib import animation, pyplot as plt
 from utils.images import TensorToImage
 

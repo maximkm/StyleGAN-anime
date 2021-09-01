@@ -6,7 +6,6 @@ import sys
 from PIL import Image
 from tqdm import tqdm
 import importlib
-import wandb
 import json
 import os
 
