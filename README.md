@@ -1,7 +1,7 @@
 # StyleGAN
 An unofficial implementation of StyleGAN for educational purposes, the task was to generate anime faces.
 
-Now a universal loader is implemented for any standard models and loss functions. The StyleGAN config E (without mixing regulation), StyleGAN2 (it is not fully written yet) and R1GAN architectures are also implemented.
+Now a universal loader is implemented for any standard models and loss functions. The StyleGAN config E (without mixing regulation), StyleGAN2 (weight demodulation + no growing, new G & D arch.) and R1GAN architectures are also implemented.
 
 ## Prerequisites
 
@@ -116,7 +116,7 @@ To increase utilization, a written loader was also used, which loads the entire 
 ### Architectures
 * StyleGAN architecture was provided by [A Style-Based Generator Architecture for Generative Adversarial Networks](https://arxiv.org/pdf/1812.04948.pdf).
 
-* StyleGAN2 architecture was provided by [Analyzing and Improving the Image Quality of StyleGAN](https://arxiv.org/pdf/1912.04958.pdf) and [lucidrains/stylegan2-pytorch](https://github.com/lucidrains/stylegan2-pytorch).
+* StyleGAN2 architecture was provided by [Analyzing and Improving the Image Quality of StyleGAN](https://arxiv.org/pdf/1912.04958.pdf) and [NVlabs/stylegan2-ada-pytorch](https://github.com/NVlabs/stylegan2-ada-pytorch).
 
 * R1GAN architecture was provided by [Jinhyeok Yang](https://github.com/Yangyangii/GAN-Tutorial/blob/master/CelebA/R1GAN.ipynb).
 

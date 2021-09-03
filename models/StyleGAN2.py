@@ -70,54 +70,54 @@ class Mapping(nn.Module):
             z = block(z)
         return z
 
+
 class Conv2Demod(nn.Module):
     def __init__(self,
                  in_channels,
                  out_channels,
-                 kernel_size=3,
+                 z_dim,
+                 kernel_size,
                  stride=1,
                  demod=True,
                  eps=1e-8
                 ):
         super().__init__()
+        assert stride == 1
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.kernel_size = kernel_size
         self.stride = stride
         self.demod = demod
+        self.z_dim = z_dim
         self.eps = eps
         
         self.weight = nn.Parameter(torch.randn((out_channels, in_channels, kernel_size, kernel_size)))
+        self.A = nn.Linear(z_dim, in_channels)
+        self.B = nn.Parameter(torch.zeros(out_channels))
+        
         nn.init.xavier_normal_(self.weight)
 
 
-    def __get_same_padding(self, size):
-        # reference: https://stats.stackexchange.com/a/410270
-        return ((self.stride - 1)*size - self.stride + self.kernel_size) // 2
-
-
-    def forward(self, img, s):
-        # reference: https://github.com/lucidrains/stylegan2-pytorch/blob/master/stylegan2_pytorch/stylegan2_pytorch.py
-        b, c, height, weight = img.shape
+    def forward(self, img, ws):
+        b, c, kh, kw = img.shape
+        styles = self.A(ws)
         
-        w1 = s.view(b, 1, -1, 1, 1)
-        w2 = self.weight.view(1, *self.weight.shape)
-        weights = w2 * (w1 + 1)
+        # Calculate per-sample weights and demodulation coefficients.
+        w = self.weight.unsqueeze(0)
+        w = w * styles.reshape(b, 1, -1, 1, 1)
+        dcoefs = (w.square().sum(dim=[2,3,4]) + self.eps).rsqrt()
+        w = w * dcoefs.reshape(b, -1, 1, 1, 1)
         
-        if self.demod:
-            d = ((weights ** 2).sum(dim=(2, 3, 4), keepdim=True) + self.eps).rsqrt()
-            weights = weights * d
+        # Convolution.
+        img = img.reshape(1, -1, kh, kw)
+        w = w.reshape(-1, self.in_channels, self.kernel_size, self.kernel_size)
+        img = F.conv2d(img, weight=w, stride=self.stride, padding='same', groups=b)
+        img = img.reshape(b, -1, kh, kw)
         
-        img = img.reshape(1, b * c, height, weight)
-
-        _, _, *ws = weights.shape
-        weights = weights.view(b * self.out_channels, *ws)
-
-        assert height == weight
-        padding = self.__get_same_padding(height)
-        img = F.conv2d(img, weights, padding=padding, groups=b)
-
-        img = img.reshape(b, self.out_channels, height, weight)
+        # Noise
+        noise = torch.randn(b, 1, kh, kw, device=img.device, dtype=img.dtype)
+        img.add_(self.B.view(1, -1, 1, 1) * noise)
+        
         return img
 
 
@@ -127,7 +127,9 @@ class BlockG(nn.Module):
                  res_out: int,         # Output image resolution
                  in_channels: int,     # Input number of channels
                  out_channels: int,    # Output number of channels
+                 rgb_channels: int,    # For RGB
                  latent_size: int,     # Dimension of the latent space
+                 is_last=False,         # disables demodulate in the block
                  ):
         super().__init__()
         assert res_out == res_in or res_out == 2 * res_in
@@ -136,46 +138,41 @@ class BlockG(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.latent_size = latent_size
+        self.is_last = is_last
 
         # Upsampling
         self.up_sample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
 
         # Creating layers
-        self.Conv1 = Conv2Demod(in_channels, out_channels, 3, 1)
-        self.Conv2 = Conv2Demod(out_channels, out_channels, 3, 1)
-        self.A1 = nn.Linear(latent_size, in_channels)
-        self.A2 = nn.Linear(latent_size, out_channels)
+        self.Conv1 = Conv2Demod(in_channels, in_channels, latent_size, 3, 1)
+        self.Conv2 = Conv2Demod(in_channels, out_channels, latent_size, 3, 1)
         self.Act = nn.LeakyReLU(0.2)
+        if is_last:
+            self.tRGB = nn.Conv2d(out_channels, rgb_channels, 1, 1)
+            nn.init.xavier_normal_(self.tRGB.weight.data)
+            nn.init.zeros_(self.tRGB.bias.data)
+        else:
+            self.tRGB = Conv2Demod(out_channels, rgb_channels, latent_size, 1, 1)
 
-        # Weights for noise
-        self.B1 = nn.Parameter(torch.zeros(out_channels))
-        self.B2 = nn.Parameter(torch.zeros(out_channels))
 
-        # Initializing weights
-        nn.init.xavier_normal_(self.A1.weight.data)
-        nn.init.zeros_(self.A1.bias.data)
-        nn.init.xavier_normal_(self.A2.weight.data)
-        nn.init.zeros_(self.A2.bias.data)
-
-    def forward(self, x, w):
+    def forward(self, x, rgb, w):
         assert len(x.shape) == 4
 
         # upsampling
         if self.res_out == 2 * self.res_in:
             x = self.up_sample(x)
+            rgb = self.up_sample(rgb)
 
-        style1 = self.A1(w)
-        x = self.Conv1(x, style1)
+        x = self.Conv1(x, w)
         x = self.Act(x)
-        noise1 = torch.randn(x.size(0), 1, x.size(2), x.size(3), device=x.device, dtype=x.dtype)
-        x = x + self.B1.view(1, -1, 1, 1) * noise1
-        
-        style2 = self.A2(w)
-        x = self.Conv2(x, style2)
+        x = self.Conv2(x, w)
         x = self.Act(x)
-        noise2 = torch.randn(x.size(0), 1, x.size(2), x.size(3), device=x.device, dtype=x.dtype)
-        x = x + self.B2.view(1, -1, 1, 1) * noise2
-        return x
+
+        if self.is_last:
+            rgb.add_(self.Act(self.tRGB(x)))
+        else:
+            rgb.add_(self.Act(self.tRGB(x, w)))
+        return x, rgb
 
 
 @generators.add_to_registry("StyleGAN2")
@@ -196,6 +193,7 @@ class Generator(nn.Module):
         self.out_channels = 3 if RGB else 1
         self.deep_mapping = deep_mapping
         self.latent_size = latent_size
+        self.start_res = start_res
         self.eps = eps
 
         # Calculating the number of channels for each resolution
@@ -205,13 +203,8 @@ class Generator(nn.Module):
         self.mapping = Mapping(latent_size, deep_mapping, normalize, eps)
         self.const = nn.Parameter(torch.ones(max_channels, start_res, start_res))
         self.blocks = OrderedDict([
-            (f'res {start_res}', BlockG(start_res, start_res, max_channels, self.map_channels[start_res], latent_size)),
+            (f'res {start_res}', BlockG(start_res, start_res, max_channels, self.map_channels[start_res], self.out_channels, latent_size)),
         ])
-        self.to_rgb = nn.Conv2d(self.map_channels[res], self.out_channels, 1, 1)
-
-        # Initializing weights
-        nn.init.xavier_normal_(self.to_rgb.weight.data)
-        nn.init.zeros_(self.to_rgb.bias.data)
 
         # Creating blocks
         to_res = 2 * start_res
@@ -219,7 +212,8 @@ class Generator(nn.Module):
             cur_res = to_res // 2
             in_channels = self.map_channels[cur_res]
             out_channels = self.map_channels[to_res]
-            self.blocks[f'res {to_res}'] = BlockG(cur_res, to_res, in_channels, out_channels, latent_size)
+            is_last = to_res == res
+            self.blocks[f'res {to_res}'] = BlockG(cur_res, to_res, in_channels, out_channels, self.out_channels, latent_size, is_last)
             to_res *= 2
 
         # Registering parameters in the model
@@ -228,9 +222,10 @@ class Generator(nn.Module):
     def forward(self, z):
         w = self.mapping(z)
         img = self.const.expand(w.size(0), -1, -1, -1)
+        rgb = torch.zeros((w.size(0), self.out_channels, self.start_res, self.start_res), device=w.device)
         for block in self.blocks.values():
-            img = block(img, w)
-        return self.to_rgb(img)
+            img, rgb = block(img, rgb, w)
+        return rgb
 
 
 class BlockD(nn.Module):
@@ -248,26 +243,28 @@ class BlockD(nn.Module):
 
         # Initializing layers
         self.Conv1 = nn.Conv2d(in_channels, out_channels, 3, 1, 1)
+        self.Conv2 = nn.Conv2d(out_channels, out_channels, 3, 2, 1)
+        self.Skip = nn.Conv2d(in_channels, out_channels, 3, 2, 1)
         self.Act = nn.LeakyReLU(0.2)
-        self.Conv2 = nn.Conv2d(out_channels, out_channels, 3, 1, 1)
-        self.down_sample = nn.Conv2d(out_channels, out_channels, 3, 2, 1)
         
         # initializing weights
         nn.init.xavier_normal_(self.Conv1.weight.data)
         nn.init.zeros_(self.Conv1.bias.data)
         nn.init.xavier_normal_(self.Conv2.weight.data)
         nn.init.zeros_(self.Conv2.bias.data)
-        nn.init.xavier_normal_(self.down_sample.weight.data)
-        nn.init.zeros_(self.down_sample.bias.data)
+        nn.init.xavier_normal_(self.Skip.weight.data)
+        nn.init.zeros_(self.Skip.bias.data)
 
     def forward(self, x):
+        y = self.Skip(x)
+        y = self.Act(y)
+        
         x = self.Conv1(x)
         x = self.Act(x)
+        
         x = self.Conv2(x)
         x = self.Act(x)
-        x = self.down_sample(x)
-        x = self.Act(x)
-        return x
+        return x + y
 
 
 @discriminators.add_to_registry("StyleGAN2")
@@ -296,12 +293,14 @@ class Discriminator(nn.Module):
             self.blocks[f'res {cur_res}'] = BlockD(cur_res, to_res, in_channels, out_channels)
             to_res //= 2
 
-        self.fromRGB = nn.Conv2d(self.in_channels, self.map_channels[res], 1, 1)
+        self.fRGB = nn.Conv2d(self.in_channels, self.map_channels[res], 1, 1)
         self.Linear = nn.Linear(self.map_channels[last_res] * last_res ** 2, 1)
 
         # initializing weights
         nn.init.xavier_normal_(self.Linear.weight.data)
         nn.init.zeros_(self.Linear.bias.data)
+        nn.init.xavier_normal_(self.fRGB.weight.data)
+        nn.init.zeros_(self.fRGB.bias.data)
 
         # Registering parameters in the model
         self.blocks = nn.ModuleDict(self.blocks)
@@ -309,8 +308,7 @@ class Discriminator(nn.Module):
     def forward(self, img):
         assert img.shape[1: ] == (self.in_channels, self.res, self.res)
         
-        img = img.view(-1, self.in_channels, self.res, self.res)
-        img = self.fromRGB(img)
+        img = self.fRGB(img)
         for block in self.blocks.values():
             img = block(img)
         return self.Linear(img.view(img.size(0), -1))
