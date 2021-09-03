@@ -1,5 +1,5 @@
-# StyleGAN
-An unofficial implementation of StyleGAN for educational purposes, the task was to generate anime faces.
+# StyleGAN and StyleGAN2
+An unofficial implementation of StyleGAN models for educational purposes, the task was to generate anime faces.
 
 Now a universal loader is implemented for any standard models and loss functions. The StyleGAN config E (without mixing regulation), StyleGAN2 (weight demodulation + no growing, new G & D arch.) and R1GAN architectures are also implemented.
 
