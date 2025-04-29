@@ -7,7 +7,7 @@ Now a universal loader is implemented for any standard models and loss functions
 
 It is recommended packages to run `PyTorch` version 1.9.0+cu102 or higher, `Pillow`, optional `wandb`.
 
-Due to the limitations of git LFS, all pre-trained weights were uploaded to [google drive](https://drive.google.com/drive/folders/1TugZwc8Hqw_dZ0B5NFNqZW_tZQPfM4ee?usp=sharing).
+All pre-trained weights were uploaded to [huggingface](https://huggingface.co/WideMax/StyleGAN-anime/tree/main/weight).
 
 ## Structure in the repository:
 
